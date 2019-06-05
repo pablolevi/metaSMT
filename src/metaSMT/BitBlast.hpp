@@ -8,8 +8,7 @@
 #include <boost/variant.hpp>
 #include <boost/any.hpp>
 #include <boost/foreach.hpp>
-
-#include <iostream>
+#include <boost/tuple/tuple.hpp>
 
 namespace metaSMT {
   namespace proto = boost::proto;
@@ -37,6 +36,8 @@ namespace metaSMT {
     typedef typename boost::make_variant_over< result_types_vec >::type 
       result_type;
       
+    typedef boost::tuple<uint64_t, unsigned>  bvuint_tuple;
+    typedef boost::tuple< int64_t, unsigned>  bvsint_tuple;
     
         void assertion( result_type e ) { 
           _solver.assertion( boost::get<result_base>(e) );
@@ -46,6 +47,14 @@ namespace metaSMT {
           _solver.assumption( boost::get<result_base>(e) );
         }
         
+        unsigned get_bv_width( result_type const &e ) {
+          try {
+            return boost::get<bv_result>(e).size();
+          } catch ( boost::bad_get ) {
+            return 0;
+          }
+        }
+
         bool solve() {
           return _solver.solve();
         }
@@ -646,7 +655,7 @@ namespace metaSMT {
           return bv_result(1,ret);
        }
 
-       result_type operator() ( bvtags::zero_extend_tag, unsigned width, result_type arg1 ) 
+       result_type operator() ( bvtags::zero_extend_tag, unsigned width, result_type arg1 )
        {
           bv_result a = boost::get<bv_result>(arg1);
           bv_result tmp(a.size()+width,_solver(predtags::false_tag(),boost::any()));
@@ -655,7 +664,7 @@ namespace metaSMT {
           return tmp;
        }
        
-       result_type operator() ( bvtags::sign_extend_tag, unsigned width, result_type arg1 ) 
+       result_type operator() ( bvtags::sign_extend_tag, unsigned width, result_type arg1 )
        {
           bv_result a = boost::get<bv_result>(arg1);
           assert(!a.empty());
@@ -738,16 +747,14 @@ namespace metaSMT {
         }
         
         result_type operator() (bvtags::bvuint_tag , boost::any arg ) {
-          typedef boost::tuple<unsigned long, unsigned long> P;
-          P p = boost::any_cast<P>(arg);
-          //std::cout << "bvuint "<< p << std::endl;
-          unsigned long value = boost::get<0>(p);
-          unsigned long width = boost::get<1>(p);
+          uint64_t value;
+          unsigned width;
+          boost::tie(value, width) = boost::any_cast<bvuint_tuple>(arg);
         
           bv_result ret (width);
           result_base one  = _solver(predtags::true_tag (), boost::any());
           result_base zero = _solver(predtags::false_tag(), boost::any());
-          for (unsigned long i = 0; i < width; ++i) {
+          for (unsigned i = 0; i < width; ++i) {
             ret[i] = (value & 1) ? one : zero;
             value >>=1;
           }
@@ -755,15 +762,14 @@ namespace metaSMT {
         }
 
         result_type operator() (bvtags::bvsint_tag , boost::any arg ) {
-          typedef boost::tuple< long, unsigned long> P;
-          P p = boost::any_cast<P>(arg);
-          signed long value = boost::get<0>(p);
-          unsigned long width = boost::get<1>(p);
+          int64_t value;
+          unsigned width;
+          boost::tie(value, width) = boost::any_cast<bvsint_tuple>(arg);
         
           bv_result ret (width);
           result_base one  = _solver(predtags::true_tag (), boost::any());
           result_base zero = _solver(predtags::false_tag(), boost::any());
-          for (unsigned long i = 0; i < width; ++i) {
+          for (unsigned i = 0; i < width; ++i) {
             ret[i] = (value & 1) ? one : zero;
             value >>=1;
           }
@@ -791,7 +797,7 @@ namespace metaSMT {
           for(unsigned i = 0; i < a.size(); ++i)
           {
             result_type index = (*this)(bvtags::bvuint_tag()
-                ,boost::any(boost::tuple<unsigned long, unsigned long>(i,a.size())));
+                ,boost::any(bvuint_tuple(i, a.size())));
             ret = (*this)(ite, 
                 (*this)(predtags::equal_tag(), value, index)
               , shiftR(a, i, zero)
@@ -812,7 +818,7 @@ namespace metaSMT {
           for(unsigned i = 0; i < a.size(); ++i)
           {
             result_type index = (*this)(bvtags::bvuint_tag()
-                ,boost::any(boost::tuple<unsigned long, unsigned long>(i,a.size())));
+                ,boost::any(bvuint_tuple(i, a.size())));
             ret = (*this)(ite, 
                 (*this)(predtags::equal_tag(), value, index)
               , shiftL(a, i)
@@ -832,7 +838,7 @@ namespace metaSMT {
           for(unsigned i = 0; i < a.size(); ++i)
           {
             result_type index = (*this)(bvtags::bvuint_tag()
-                ,boost::any(boost::tuple<unsigned long, unsigned long>(i,a.size())));
+                ,boost::any(bvuint_tuple(i, a.size())));
             ret = (*this)(ite, 
                 (*this)(predtags::equal_tag(), value, index)
               , shiftR(a, i, a.back())
@@ -882,7 +888,7 @@ namespace metaSMT {
         };
 
         result_type operator() (bvtags::extract_tag const & 
-            , unsigned long upper, unsigned long lower
+            , unsigned upper, unsigned lower
             , result_type e
         ) {
           bv_result ret(upper-lower+1);
@@ -941,7 +947,7 @@ namespace metaSMT {
             // std::cout << "operator " << tag << std::endl;
            return _solver(tag, args);
           } catch (boost::bad_get) {
-            std::cout << "Error bad_get in operator " << typeid(tag).name() << std::endl;
+//            std::cout << "Error bad_get in operator " << typeid(tag).name() << std::endl;
             throw;
           }
         }
@@ -961,7 +967,7 @@ namespace metaSMT {
             , boost::get<result_base>(b)
           );
           } catch (boost::bad_get) {
-            std::cout << "Error bad_get in operator " << typeid(tag).name() << std::endl;
+//            std::cout << "Error bad_get in operator " << typeid(tag).name() << std::endl;
             throw;
           }
         }
@@ -975,7 +981,7 @@ namespace metaSMT {
             , boost::get<result_base>(c)
           );
           } catch (boost::bad_get) {
-            std::cout << "Error bad_get in operator " << typeid(tag).name() << std::endl;
+//            std::cout << "Error bad_get in operator " << typeid(tag).name() << std::endl;
             throw;
           }
         }

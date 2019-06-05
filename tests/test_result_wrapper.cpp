@@ -3,13 +3,18 @@
 
 #include <boost/proto/debug.hpp>
 #include <boost/test/unit_test.hpp>
+#include <boost/type_traits/is_signed.hpp>
+#include <boost/type_traits/is_unsigned.hpp>
+#include <boost/utility/enable_if.hpp>
 #include <string>
 #include <limits>
+#include <bitset>
 
-using namespace std;
 using namespace metaSMT;
 using boost::dynamic_bitset;
 using boost::logic::tribool;
+using std::vector;
+using std::string;
 
 class Fixture {
   public:
@@ -43,11 +48,11 @@ void check_conversion_XXX( result_wrapper const & rw)
   BOOST_REQUIRE_EQUAL( ul, 0ul);
 
   vector<bool> a, b(3, false);
-  a = rw;
+  a = rw.operator std::vector<bool>();
   BOOST_REQUIRE_EQUAL_COLLECTIONS(a.begin(), a.end(), b.begin(), b.end());
 
   vector<tribool> ta, tb(3, indeterminate);
-  ta = rw;
+  ta = rw.operator std::vector<boost::logic::tribool>();
   BOOST_REQUIRE_EQUAL_COLLECTIONS(ta.begin(), ta.end(), tb.begin(), tb.end());
 
   unsigned char uc = rw;
@@ -55,7 +60,6 @@ void check_conversion_XXX( result_wrapper const & rw)
 
   signed char sc = rw;
   BOOST_REQUIRE_EQUAL( sc, 0);
-
 
   dynamic_bitset<> bs = rw;
   BOOST_REQUIRE_EQUAL(bs, dynamic_bitset<>(3, 0u));
@@ -82,10 +86,10 @@ void check_conversion_0_in_8bit( result_wrapper const & rw)
   BOOST_REQUIRE_EQUAL( ul, 0ul);
 
   vector<bool> a, b(8, false);
-  a = rw;
+  a = rw.operator std::vector<bool>();
   BOOST_REQUIRE_EQUAL_COLLECTIONS(a.begin(), a.end(), b.begin(), b.end());
 
-  vector<tribool> tb = rw;
+  vector<tribool> tb = rw.operator std::vector<boost::logic::tribool>();
   BOOST_REQUIRE_EQUAL_COLLECTIONS(tb.begin(), tb.end(), b.begin(), b.end());
 
   unsigned char uc = rw;
@@ -121,10 +125,10 @@ void check_conversion_1_in_8bit( result_wrapper const & rw)
 
   vector<bool> a, b(8, false);
   b[0] = true;
-  a = rw;
+  a = rw.operator std::vector<bool>();
   BOOST_REQUIRE_EQUAL_COLLECTIONS(a.begin(), a.end(), b.begin(), b.end());
 
-  vector<tribool> tb = rw;
+  vector<tribool> tb = rw.operator std::vector<boost::logic::tribool>();
   BOOST_REQUIRE_EQUAL_COLLECTIONS(tb.begin(), tb.end(), b.begin(), b.end());
 
   unsigned char uc = rw;
@@ -151,10 +155,10 @@ void check_conversion_128_in_8bit( result_wrapper const & rw)
 
   vector<bool> a, b(8, false);
   b[7] = true;
-  a = rw;
+  a = rw.operator std::vector<bool>();
   BOOST_REQUIRE_EQUAL_COLLECTIONS(a.begin(), a.end(), b.begin(), b.end());
 
-  vector<tribool> tb = rw;
+  vector<tribool> tb = rw.operator std::vector<boost::logic::tribool>();
   BOOST_REQUIRE_EQUAL_COLLECTIONS(tb.begin(), tb.end(), b.begin(), b.end());
 
   unsigned char uc = rw;
@@ -169,7 +173,7 @@ void check_conversion_128_in_8bit( result_wrapper const & rw)
   unsigned u = rw;
   BOOST_REQUIRE_EQUAL( u, 128u);
 
-  unsigned long ul = rw;
+  unsigned long ul = rw.operator unsigned long();
   BOOST_REQUIRE_EQUAL( ul, 128ul);
 
   dynamic_bitset<> bs = rw;
@@ -177,33 +181,57 @@ void check_conversion_128_in_8bit( result_wrapper const & rw)
 
 }
 
-void check_conversion_ULONG_MAX_in_64bit( result_wrapper const &rw ) {
-  unsigned long const value = std::numeric_limits<unsigned long>::max();
+// do not check downcasting for signed
+template<typename T>
+void check_conversion_integer_cast(result_wrapper const & rw, T value, typename boost::enable_if<boost::is_signed<T> >::type* = 0) {
+  int16_t i16 = rw;
+  if (std::numeric_limits<T>::digits <= 16) BOOST_REQUIRE_EQUAL( i16,  int16_t(value) );
+  int32_t i32 = rw;
+  if (std::numeric_limits<T>::digits <= 32) BOOST_REQUIRE_EQUAL( i32,  int32_t(value) );
+  int64_t i64 = rw;
+  if (std::numeric_limits<T>::digits <= 64) BOOST_REQUIRE_EQUAL( i64,  int64_t(value) );
+}
+
+template<typename T>
+void check_conversion_integer_cast(result_wrapper const & rw, T value, typename boost::enable_if<boost::is_unsigned<T> >::type* = 0) {
+  uint16_t u16 = rw;
+  BOOST_REQUIRE_EQUAL( u16, uint16_t(value) );
+  uint32_t u32 = rw;
+  BOOST_REQUIRE_EQUAL( u32, uint32_t(value) );
+  uint64_t u64 = rw;
+  BOOST_REQUIRE_EQUAL( u64, uint64_t(value) );
+}
+
+template<unsigned width, typename Integer>
+void check_conversion_from_integer(Integer value) {
+  result_wrapper rw(value, width);
 
   tribool tri = rw;
-  BOOST_REQUIRE_EQUAL( tri, true );
+  // only check if value is not truncated
+  if (std::numeric_limits<Integer>::digits <= width) BOOST_REQUIRE_EQUAL( tri, true );
 
   bool boolean = rw;
-  BOOST_REQUIRE_EQUAL( boolean, true );
+  // only check if value is not truncated
+  if (std::numeric_limits<Integer>::digits <= width) BOOST_REQUIRE_EQUAL( boolean, true );
 
   std::string s = rw;
-  BOOST_REQUIRE_EQUAL( s, "1111111111111111111111111111111111111111111111111111111111111111" );
+  BOOST_REQUIRE_EQUAL( s, std::bitset<width>(value).to_string() );
 
-  vector<bool> a, b(64, true);
-  a = rw;
+  vector<bool> a = rw.operator std::vector<bool>();
+  vector<bool> b;
+  for (unsigned i = 0; i < width; i++)
+    b.push_back(s[width - i - 1] == '1');
   BOOST_REQUIRE_EQUAL_COLLECTIONS(a.begin(), a.end(), b.begin(), b.end());
 
-  vector<tribool> tb = rw;
+  vector<tribool> tb = rw.operator std::vector<boost::logic::tribool>();
   BOOST_REQUIRE_EQUAL_COLLECTIONS(tb.begin(), tb.end(), b.begin(), b.end());
 
-  unsigned u = rw;
-  BOOST_REQUIRE_EQUAL( u, unsigned(value) );
+//  XXX somehow dynamic_bitset truncates 64-bit values on 32-bit platforms...
+//  dynamic_bitset<> bs = rw;
+//  BOOST_REQUIRE_EQUAL(bs, dynamic_bitset<>(width, value));
 
-  unsigned long ul = rw;
-  BOOST_REQUIRE_EQUAL( ul, value );
-
-  dynamic_bitset<> bs = rw;
-  BOOST_REQUIRE_EQUAL(bs, dynamic_bitset<>(64, value));
+  // only check if value is not truncated
+  if (std::numeric_limits<Integer>::digits <= width) check_conversion_integer_cast(rw, value);
 }
 
 void check_conversion_13_in_8bit( result_wrapper const & rw)
@@ -221,10 +249,10 @@ void check_conversion_13_in_8bit( result_wrapper const & rw)
   b[0] = true;
   b[2] = true;
   b[3] = true;
-  a = rw;
+  a = rw.operator std::vector<bool>();
   BOOST_REQUIRE_EQUAL_COLLECTIONS(a.begin(), a.end(), b.begin(), b.end());
 
-  vector<tribool> tb = rw;
+  vector<tribool> tb = rw.operator std::vector<boost::logic::tribool>();
   BOOST_REQUIRE_EQUAL_COLLECTIONS(tb.begin(), tb.end(), b.begin(), b.end());
 
   unsigned char uc = rw;
@@ -261,10 +289,10 @@ void check_conversion_true( result_wrapper const & rw)
   BOOST_REQUIRE_EQUAL( s, "1" );
 
   vector<bool> a, b(1, true);
-  a = rw;
+  a = rw.operator std::vector<bool>();
   BOOST_REQUIRE_EQUAL_COLLECTIONS(a.begin(), a.end(), b.begin(), b.end());
 
-  vector<tribool> tb = rw;
+  vector<tribool> tb = rw.operator std::vector<boost::logic::tribool>();
   BOOST_REQUIRE_EQUAL_COLLECTIONS(tb.begin(), tb.end(), b.begin(), b.end());
 
   int i = rw;
@@ -300,10 +328,10 @@ void check_conversion_false( result_wrapper const & rw)
   BOOST_REQUIRE_EQUAL( s, "0" );
 
   vector<bool> a, b(1, false);
-  a = rw;
+  a = rw.operator std::vector<bool>();
   BOOST_REQUIRE_EQUAL_COLLECTIONS(a.begin(), a.end(), b.begin(), b.end());
 
-  vector<tribool> tb = rw;
+  vector<tribool> tb = rw.operator std::vector<boost::logic::tribool>();
   BOOST_REQUIRE_EQUAL_COLLECTIONS(tb.begin(), tb.end(), b.begin(), b.end());
 
   unsigned char uc = rw;
@@ -332,7 +360,7 @@ BOOST_AUTO_TEST_CASE( from_string )
   const std::string val = "1101";
 	result_wrapper rw(val);
 
-  string s = rw;
+  std::string s = rw;
   BOOST_REQUIRE_EQUAL(s, val);
 
   unsigned u = rw;
@@ -531,7 +559,12 @@ BOOST_AUTO_TEST_CASE( from_integral_value_and_width )
   check_conversion_true ( result_wrapper(1, 1) );
   check_conversion_false( result_wrapper(0, 1) );
 
-  check_conversion_ULONG_MAX_in_64bit( result_wrapper(std::numeric_limits<unsigned long>::max(),64) );
+  check_conversion_from_integer<64>(std::numeric_limits<uint64_t>::max());
+  check_conversion_from_integer<64>(std::numeric_limits<uint32_t>::max());
+  check_conversion_from_integer<32>(std::numeric_limits<uint64_t>::max());
+  check_conversion_from_integer<64>(std::numeric_limits< int64_t>::min());
+  check_conversion_from_integer<64>(std::numeric_limits< int32_t>::min());
+  check_conversion_from_integer<32>(std::numeric_limits< int64_t>::min());
 }
 
 BOOST_AUTO_TEST_SUITE_END() // result_wrapper

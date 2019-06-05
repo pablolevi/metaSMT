@@ -3,37 +3,27 @@ SRC_DIR=$( cd $(dirname $0) && pwd)
 
 BUILD_DIR=$PWD/build
 
-BOOST=boost-1_55_0
-
-REQUIRES="
-  $BOOST
-"
+BOOST=boost-1_55_0-fs
 
 ACADEMIC="
-  lingeling-ayv-86bf266-140429
-  boolector-2.2.0
+  boolector-2.4.1
+  lingeling-bbc-9230380-161217
+  minisat-git
+  yices-2.5.2
 "
 
 FREE="
-  cryptominisat-git
-  cvc4-1.4
-  picosat-936
-  aiger-20071012
-  cudd-2.4.2
+  Z3-4.5.0
+  cvc4-1.5
+  stp-2.3.1-basic
   minisat-git
-  stp-git
-  Z3-git
+  aiger-20071012
+  picosat-936
+  cudd-3.0.0
 "
 
 NONFREE="
   SWORD-1.1
-  lingeling-ayv-86bf266-140429
-"
-
-TRAVIS="
-  lingeling-ayv-86bf266-140429
-  boolector-2.2.0
-  cudd-2.4.2
 "
 
 CMAKE=cmake
@@ -54,7 +44,6 @@ usage: $0 [--free] [--non-free] build
   --academic      include academic license backends (Boolector, Lingeling)
   --free          include free backends (Aiger, CUDD, CVC4, PicoSat, Z3, ...)
   --non-free      include non-free backends (SWORD, Lingeling)
-  --travis        include selected backends for testing with Travis CI
   --clean         delete build directory before creating a new one
   --deps <dir>    build dependencies in this directory
    -d <dir>       can be shared in different projects
@@ -66,7 +55,7 @@ usage: $0 [--free] [--non-free] build
    -G <generator> pass generator to CMake
   --cmake=/p/t/c  use this version of CMake
   --cmake         build a custom CMake version
-  --build <pkg>   build this dependency package, must exist in depdencies
+  --build <pkg>   build this dependency package, must exist in dependencies
   -b <pkg>
   -j N            The number of make jobs
   <build>         the directory to setup the build environment in
@@ -83,14 +72,13 @@ fi
 while [[ "$@" ]]; do
   case $1 in
     --help|-h)    usage;;
-    --academi*)   REQUIRES="$REQUIRES $ACADEMIC" ;;
-    --free)       REQUIRES="$REQUIRES $FREE" ;;
-    --non-free)   REQUIRES="$REQUIRES $NONFREE" ;;
-    --travis)     REQUIRES="$REQUIRES $TRAVIS" ;;
+    --academi*)   REQUIRES="$ACADEMIC $REQUIRES" ;;
+    --free)       REQUIRES="$FREE $REQUIRES" ;;
+    --non-free)   REQUIRES="$NONFREE $REQUIRES" ;;
     --deps|-d)    DEPS="$2"; shift;;
     --install|-i) INSTALL="$2"; shift;;
     --mode|-m)    CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_BUILD_TYPE=$2"; shift;;
-     -D*)         CMAKE_ARGS="$CMAKE_ARGS '$1'";;
+     -D*)         CMAKE_ARGS="$CMAKE_ARGS $1";;
      -G)          CMAKE_GENERATOR="$2" && shift;;
     --clean|-c)   CLEAN="rm -rf";;
     --cmake=*)    CMAKE="${1#--cmake=}";;
@@ -122,6 +110,11 @@ BUILD_DIR=$(mk_and_abs_dir $BUILD_DIR) &&
 INSTALL=$(mk_and_abs_dir ${INSTALL:-$BUILD_DIR/root}) &&
 DEPS=$(mk_and_abs_dir ${DEPS:-$BUILD_DIR}) &&
 
+if [ -z "$BOOST_ROOT" ]; then
+  REQUIRES="$BOOST $REQUIRES"
+  BOOST_ROOT="$DEPS/$BOOST"
+  export DEPS_BOOST=$BOOST
+fi
 
 if ! cd dependencies; then 
     echo 'Missing "dependencies" directory. Please refer to the README.md for more details.'
@@ -140,7 +133,7 @@ fi
 }
 cd $BUILD_DIR && 
 
-PREFIX_PATH=$(echo $REQUIRES| sed "s@[ ^] *@;$DEPS/@g")
+PREFIX_PATH=$(echo .$REQUIRES| sed "s@[ ^] *@;$DEPS/@g")
 
 eval_echo() {
   local RESULT=true
@@ -158,9 +151,8 @@ eval_echo $CMAKE \
   -DCMAKE_INSTALL_PREFIX="$INSTALL" \
   -DCMAKE_PREFIX_PATH="$PREFIX_PATH" \
   $CMAKE_ARGS \
-  -DBOOST_ROOT="$DEPS/$BOOST" \
+  -DBOOST_ROOT="$BOOST_ROOT" \
   $SRC_DIR
-
 
 echo "finished bootstrap, you can now call make in $BUILD_DIR"
 

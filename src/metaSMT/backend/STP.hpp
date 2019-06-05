@@ -12,6 +12,7 @@ extern "C" {
 #include <boost/any.hpp>
 #include <boost/tuple/tuple.hpp>
 #include <list>
+#include <cstdio>
 
 namespace metaSMT {
   namespace solver {
@@ -25,6 +26,10 @@ namespace metaSMT {
      * @brief The STP backend
      */
     class STP {
+    private:
+      typedef boost::tuple<uint64_t, unsigned>  bvuint_tuple;
+      typedef boost::tuple< int64_t, unsigned>  bvsint_tuple;
+
     public:
       typedef Expr result_type;
       typedef std::list< Expr > Exprs;
@@ -49,11 +54,15 @@ namespace metaSMT {
       }
 
       void assertion( result_type e ) {
-        assertions.push_back( e );
+        vc_assertFormula(vc, e);
       }
 
       void assumption( result_type e ) {
         assumptions.push_back( e );
+      }
+
+      unsigned get_bv_width( result_type const &e ) {
+        return getType(e) == BITVECTOR_TYPE ? getBVLength(e) : 0;
       }
 
       bool solve() {
@@ -64,25 +73,19 @@ namespace metaSMT {
         , TIMEOUT = 3
         };
 
-        Expr e = ptr(vc_trueExpr( vc ));
-        for ( Exprs::const_iterator it = assertions.begin(), ie = assertions.end();
-              it != ie; ++it ) {
-          e = ptr(vc_andExpr(vc, e, *it));
-        }
-        for ( Exprs::const_iterator it = assumptions.begin(), ie = assumptions.end();
-              it != ie; ++it ) {
-          e = ptr(vc_andExpr(vc, e, *it));
+        if (!assumptions.empty()) {
+          vc_push(vc);
+          for ( Exprs::const_iterator it = assumptions.begin(), ie = assumptions.end();
+            it != ie; ++it ) {
+            vc_assertFormula(vc, *it);
+          }
         }
 
-        // negate formula
-        e = ptr(vc_notExpr(vc, e));
-        // vc_printExpr(vc, e);
-
-        vc_push( vc );
         bool sat = false;
-        switch ( vc_query(vc, e) ) {
+        // check (F -> false)
+        switch ( vc_query(vc, vc_falseExpr(vc)) ) {
         case VALID:
-          // negated formula is tautologie
+          // implies (not F) is valid
           sat = false;
           break;
         case INVALID:
@@ -93,9 +96,11 @@ namespace metaSMT {
           assert( false && "STP solver returns neither SAT nor UNSAT!");
           // exception
         }
-        vc_pop( vc );
-        // std::cerr << "SAT? " << sat << '\n';
-        assumptions.clear();
+
+        if (!assumptions.empty()) {
+          vc_pop( vc );
+          assumptions.clear();
+        }
 
         return sat;
       }
@@ -118,11 +123,15 @@ namespace metaSMT {
           break;
         case BITVECTOR_TYPE:
           {
-            unsigned long long const value = getBVUnsignedLongLong(cex);
             unsigned const width = getBVLength(cex);
-            boost::dynamic_bitset<> bv(width, value);
-            std::string str; to_string(bv, str);
-            return result_wrapper(str);
+            if (width <= sizeof(unsigned long long) * 8) {
+              return result_wrapper(getBVUnsignedLongLong(cex), width);
+            } else {
+              std::string str = exprString(cex);
+              assert(str.find("0b") == 0);
+              size_t pos = str.find_first_of(' '); // find trailing space
+              return result_wrapper(pos != std::string::npos ? str.substr(2, pos - 2) : str.substr(2));
+            }
           }
           break;
         case ARRAY_TYPE:
@@ -134,18 +143,18 @@ namespace metaSMT {
       }
 
       // predtags
-      result_type operator()( predtags::var_tag const & var, boost::any args ) {
+      result_type operator()( predtags::var_tag const & var, boost::any ) {
         Type bool_ty = vc_boolType(vc);
         char buf[64];
         sprintf(buf, "var_%u", var.id);
         return ptr(vc_varExpr(vc, buf, bool_ty));
       }
 
-      result_type operator()( predtags::false_tag , boost::any arg ) {
+      result_type operator()( predtags::false_tag , boost::any ) {
         return ptr(vc_falseExpr(vc));
       }
 
-      result_type operator()( predtags::true_tag , boost::any arg ) {
+      result_type operator()( predtags::true_tag , boost::any ) {
         return ptr(vc_trueExpr(vc));
       }
 
@@ -171,13 +180,13 @@ namespace metaSMT {
         return ptr(vc_orExprN(vc, exprs, num_elm));
       }
 
-      result_type operator()( predtags::ite_tag tag
+      result_type operator()( predtags::ite_tag
                               , result_type a, result_type b, result_type c ) {
         return ptr(vc_iteExpr(vc, a, b, c));
       }
 
       // bvtags
-      result_type operator()( bvtags::var_tag const & var, boost::any args ) {
+      result_type operator()( bvtags::var_tag const & var, boost::any ) {
         assert ( var.width != 0 );
         Type bv_ty = vc_bvType(vc, var.width);
         char buf[64];
@@ -185,26 +194,25 @@ namespace metaSMT {
         return ptr(vc_varExpr(vc, buf, bv_ty));
       }
 
-      result_type operator()( bvtags::bit0_tag , boost::any arg ) {
+      result_type operator()( bvtags::bit0_tag , boost::any ) {
         return (vc_bvConstExprFromInt(vc, 1, 0)); // No ptr()
       }
 
-      result_type operator()( bvtags::bit1_tag , boost::any arg ) {
+      result_type operator()( bvtags::bit1_tag , boost::any ) {
         return (vc_bvConstExprFromInt(vc, 1, 1)); // No ptr()
       }
 
       result_type operator()( bvtags::bvuint_tag , boost::any arg ) {
-        typedef boost::tuple<unsigned long, unsigned long> Tuple;
-        Tuple tuple = boost::any_cast<Tuple>(arg);
-        unsigned long value = boost::get<0>(tuple);
-        unsigned long width = boost::get<1>(tuple);
+        uint64_t value;
+        unsigned width;
+        boost::tie(value, width) = boost::any_cast<bvuint_tuple>(arg);
 
-        if ( width > 8*sizeof(unsigned long) ) {
+        if ( width > 8*sizeof(unsigned long long) ) {
           std::string val (width, '0');
 
           std::string::reverse_iterator sit = val.rbegin();
-          for (unsigned long i = 0; i < width; i++, ++sit) {
-            *sit = (value & 1ul) ? '1':'0';
+          for (unsigned i = 0; i < width; i++, ++sit) {
+            *sit = (value & 1ull) ? '1':'0';
             value >>= 1;
           }
           return ptr(vc_bvConstExprFromStr(vc, val.c_str()));
@@ -215,26 +223,22 @@ namespace metaSMT {
       }
 
       result_type operator()( bvtags::bvsint_tag , boost::any arg ) {
-        typedef boost::tuple<long, unsigned long> Tuple;
-        Tuple tuple = boost::any_cast<Tuple>(arg);
-        long value = boost::get<0>(tuple);
-        unsigned long width = boost::get<1>(tuple);
+        int64_t value;
+        unsigned width;
+        boost::tie(value, width) = boost::any_cast<bvsint_tuple>(arg);
 
-        if ( width > 8*sizeof(unsigned long)
-             || value > std::numeric_limits<long int>::max()
-             || value < std::numeric_limits<long int>::min()
-        ) {
+        if ( width > 8*sizeof(unsigned long long) ) {
           std::string val (width, '0');
 
           std::string::reverse_iterator sit = val.rbegin();
-          for (unsigned long i = 0; i < width; i++, ++sit) {
-            *sit = (value & 1l) ? '1':'0';
+          for (unsigned i = 0; i < width; i++, ++sit) {
+            *sit = (value & 1ll) ? '1':'0';
             value >>= 1;
           }
           return ptr(vc_bvConstExprFromStr(vc, val.c_str()));
         }
         else {
-          return ptr(vc_bvConstExprFromLL(vc, width, static_cast<unsigned long>(value)));
+          return ptr(vc_bvConstExprFromLL(vc, width, static_cast<unsigned long long>(value)));
         }
       }
 
@@ -332,13 +336,13 @@ namespace metaSMT {
       }
 
       result_type operator()( bvtags::extract_tag const &
-        , unsigned long upper, unsigned long lower
+        , unsigned upper, unsigned lower
         , result_type e) {
         return ptr(vc_bvExtract(vc, e, upper, lower));
       }
 
       result_type operator()( bvtags::zero_extend_tag const &
-        , unsigned long width
+        , unsigned width
         , result_type e) {
         std::string s(width, '0');
         Expr zeros = ptr(vc_bvConstExprFromStr(vc, s.c_str()));
@@ -346,9 +350,9 @@ namespace metaSMT {
       }
 
       result_type operator()( bvtags::sign_extend_tag const &
-        , unsigned long width
+        , unsigned width
         , result_type e) {
-        unsigned long const current_width = getBVLength(e);
+        unsigned const current_width = getBVLength(e);
         return ptr(vc_bvSignExtend(vc, e, current_width + width));
       }
 
@@ -377,7 +381,7 @@ namespace metaSMT {
       
     
       result_type operator() (arraytags::array_var_tag const & var
-                              , boost::any args )
+                              , boost::any )
       {
         if (var.id == 0 ) {
           throw std::runtime_error("uninitialized array used");
@@ -420,7 +424,7 @@ namespace metaSMT {
       ////////////////////////
 
       template <typename TagT>
-      result_type operator() (TagT tag, boost::any args ) {
+      result_type operator() (TagT , boost::any ) {
         assert( false );
         return ptr(vc_falseExpr(vc));
       }
@@ -457,7 +461,7 @@ namespace metaSMT {
       };
 
       template <typename TagT>
-      result_type operator() (TagT tag, result_type a, result_type b) {
+      result_type operator() (TagT , result_type a, result_type b) {
         namespace mpl = boost::mpl;
 
         typedef mpl::map29<
@@ -515,16 +519,15 @@ namespace metaSMT {
       }
 
       template <typename TagT>
-      result_type operator() (TagT tag, result_type a, result_type b, result_type c) {
+      result_type operator() (TagT , result_type , result_type , result_type ) {
         assert( false );
         return ptr(vc_falseExpr(vc));
       }
 
       // pseudo command
-      void command ( STP const & ) { };
+      void command ( STP const & ) { }
 
       VC vc;
-      Exprs assertions;
       Exprs assumptions;
       Exprs exprs;
     }; // STP

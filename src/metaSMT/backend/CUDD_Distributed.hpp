@@ -53,8 +53,8 @@ private:
 		map_1 [_manager.bddOne().getNode()] = 1;
 	}
 	unsigned distance(DdNode *parent, DdNode *child) {
-		int i_1 = Cudd_ReadPerm(_manager.getManager(),Cudd_Regular(parent)->index);
-		int i_2 = (Cudd_IsConstant(child)) ? _manager.ReadSize() : Cudd_ReadPerm(_manager.getManager(), Cudd_Regular(child)->index);	
+		int i_1 = Cudd_ReadPerm(_manager.getManager(),Cudd_NodeReadIndex(parent));
+		int i_2 = (Cudd_IsConstant(child)) ? _manager.ReadSize() : Cudd_ReadPerm(_manager.getManager(), Cudd_NodeReadIndex(child));	
 		//std::cout << boost::format( "distance(v%d,v%d) = %d - %d = %d\n") 
 		//	% parent->index % child->index % i_2 % i_1 % (i_2 - i_1);
 		return i_2 - i_1;
@@ -148,13 +148,13 @@ private:
 		if(select <  cnt_t )
 		{			
 			//std::cout << "v" << root->index << " = 1" << std::endl;
-			_solution[root->index] = true;
+			_solution[Cudd_NodeReadIndex(root)] = true;
 			root = Cudd_T( root );
 		}	
 		else
 		{
 			//std::cout << "v" << root->index << " = 0" << std::endl;
-			_solution[root->index] = false;
+			_solution[Cudd_NodeReadIndex(root)] = false;
 			root = Cudd_E( root );	
 		}
 	    }

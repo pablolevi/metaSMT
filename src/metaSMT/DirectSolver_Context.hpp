@@ -12,11 +12,22 @@
 #include "API/BoolEvaluator.hpp"
 #include "support/Options.hpp"
 
+#if __cplusplus <= 199711L
+
+#include <boost/unordered_map.hpp>
+#define unordered_map boost::unordered_map
+
+#else
+
+#include <unordered_map>
+#define unordered_map std::unordered_map
+
+#endif
+
 #include <boost/any.hpp>
 #include <boost/tuple/tuple.hpp>
 #include <boost/proto/core.hpp>
 #include <boost/proto/context.hpp>
-#include <boost/tr1/unordered_map.hpp>
 
 namespace metaSMT {
   /**
@@ -52,8 +63,8 @@ namespace metaSMT {
         , Expr1 value
         , Expr2 bw
     ) {
-      const unsigned long val   = proto::value(value);
-      const unsigned long width = proto::value(bw);
+      const uint64_t val   = proto::value(value);
+      const unsigned width = proto::value(bw);
 
       return SolverContext::operator() ( tag,
         boost::any(boost::make_tuple(val, width))
@@ -66,8 +77,8 @@ namespace metaSMT {
         , Expr1 value
         , Expr2 bw
     ) {
-      const long val            = proto::value(value);
-      const unsigned long width = proto::value(bw);
+      const int64_t val    = proto::value(value);
+      const unsigned width = proto::value(bw);
 
       return  SolverContext::operator() ( tag, 
         boost::any(boost::make_tuple(val, width))
@@ -307,6 +318,10 @@ namespace metaSMT {
       return SolverContext::operator()( t, boost::any() );
     }
 
+    unsigned get_bv_width(result_type const &e) {
+      return SolverContext::get_bv_width(e);
+    }
+
     void command( assertion_cmd const &, result_type e) {
       SolverContext::assertion(e);
     }
@@ -315,7 +330,7 @@ namespace metaSMT {
       SolverContext::assumption(e);
     }
 
-    void command( set_option_cmd const &tag, std::string const &key, std::string const &value ) {
+    void command( set_option_cmd const & , std::string const &key, std::string const &value ) {
       opt.set(key, value);
       typedef typename boost::mpl::if_<
         /* if   = */ typename features::supports< SolverContext, set_option_cmd >::type
@@ -336,7 +351,8 @@ namespace metaSMT {
     using SolverContext::command;
 
     private:
-      typedef typename std::tr1::unordered_map<unsigned, result_type> VariableLookupT;
+      typedef typename unordered_map<unsigned, result_type> VariableLookupT;
+#undef unordered_map
       VariableLookupT _variables;
       Options opt;
 
@@ -369,7 +385,7 @@ namespace metaSMT {
 
   template < typename SolverType >
   typename DirectSolver_Context<SolverType>::result_type
-  evaluate( DirectSolver_Context<SolverType> &ctx,
+  evaluate( DirectSolver_Context<SolverType> & ,
             typename DirectSolver_Context<SolverType>::result_type r ) {
     return r;
   }

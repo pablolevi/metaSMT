@@ -4,10 +4,11 @@
 
 using namespace metaSMT;
 struct Solver_Fixture {
-  typedef DirectSolver_Context< metaSMT::solver::CVC4 > ContextType;
-  ContextType ctx ;
+  typedef DirectSolver_Context<metaSMT::solver::CVC4> ContextType;
+  ContextType ctx;
 };
 
 #include "test_solver.cpp"
 #include "test_QF_BV.cpp"
 #include "test_cardinality.cpp"
+#include "test_Array.cpp"

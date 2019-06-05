@@ -8,7 +8,7 @@
 #include <boost/mpl/integral_c.hpp>
 #include <boost/mpl/map/map50.hpp>
 #include <boost/any.hpp>
-#include <iostream>
+#include <boost/tuple/tuple.hpp>
 #include <cstdio>
 
 
@@ -26,6 +26,10 @@ namespace metaSMT {
      */
     class SWORD_Backend {
       private:
+        typedef boost::tuple<uint64_t, unsigned>  bvuint_tuple;
+        typedef boost::tuple< int64_t, unsigned>  bvsint_tuple;
+
+      private:
         template <SWORD::OPCODE OC>
         struct SWORD_Op : public boost::mpl::integral_c<SWORD::OPCODE, OC> {};
 
@@ -40,7 +44,7 @@ namespace metaSMT {
          * predicate logic
          *******************/
 
-        result_type operator() (predtags::var_tag const & var, boost::any args )
+        result_type operator() (predtags::var_tag const & var, boost::any )
         {
           char buf[256];
           sprintf(buf, "pvar_%d", var.id);
@@ -48,19 +52,19 @@ namespace metaSMT {
           return _sword.addVariable(1, buf);
         }
 
-        result_type operator() (predtags::false_tag , boost::any arg ) {
+        result_type operator() (predtags::false_tag , boost::any ) {
           //printf("false\n");
           return _sword.addConstant(1,0);
         }
 
-        result_type operator() (predtags::true_tag , boost::any arg ) {
+        result_type operator() (predtags::true_tag , boost::any ) {
           //printf("true\n");
           return _sword.addConstant(1,1);
         }
 
         // QF_BV tags
 
-        result_type operator() (bvtags::var_tag const & var , boost::any args ) 
+        result_type operator() (bvtags::var_tag const & var , boost::any )
         {
           char buf[256];
           sprintf(buf, "var_%d", var.id);
@@ -68,12 +72,12 @@ namespace metaSMT {
           return _sword.addVariable(var.width, buf);
         }
 
-        result_type operator() (bvtags::bit0_tag , boost::any arg ) {
+        result_type operator() (bvtags::bit0_tag , boost::any ) {
           //printf("bit0\n");
           return _sword.addConstant(1,0);
         }
 
-        result_type operator() (bvtags::bit1_tag , boost::any arg ) {
+        result_type operator() (bvtags::bit1_tag , boost::any ) {
           //printf("bit1\n");
           return _sword.addConstant(1,1);
         }
@@ -90,18 +94,26 @@ namespace metaSMT {
         }
 
         result_type operator() (bvtags::bvuint_tag , boost::any arg ) {
-          typedef boost::tuple<unsigned long, unsigned long> P;
-          P p = boost::any_cast<P>(arg);
-          //printf("bvuint\n");
-          return _sword.addConstant(boost::get<1>(p), boost::get<0>(p));
+          uint64_t value;
+          unsigned width;
+          boost::tie(value, width) = boost::any_cast<bvuint_tuple>(arg);
+
+          if (value > std::numeric_limits<unsigned long>::max()) {
+            std::string val(width, '0');
+            std::string::reverse_iterator it = val.rbegin();
+            for ( unsigned u = 0; u < width; ++u, ++it ) {
+              *it = (value & 1ul) ? '1' : '0';
+              value >>= 1;
+            }
+            return _sword.addBinConstant(val);
+          }
+          return _sword.addConstant(width, static_cast<unsigned long>(value));
         }
 
         result_type operator() (bvtags::bvsint_tag , boost::any arg ) {
-          //printf("bvsint\n");
-          typedef boost::tuple<long, unsigned long> Tuple;
-          Tuple const tuple = boost::any_cast<Tuple>(arg);
-          long value = boost::get<0>(tuple);
-          unsigned long const width = boost::get<1>(tuple);
+          int64_t value;
+          unsigned width;
+          boost::tie(value, width) = boost::any_cast<bvsint_tuple>(arg);
 
           if (    value > std::numeric_limits<int>::max()
                || value < std::numeric_limits<int>::min()
@@ -109,7 +121,7 @@ namespace metaSMT {
              ) {
             std::string val(width, '0');
             std::string::reverse_iterator it = val.rbegin();
-            for ( unsigned long u = 0; u < width; ++u, ++it ) {
+            for ( unsigned u = 0; u < width; ++u, ++it ) {
               *it = (value & 1l) ? '1' : '0';
               value >>= 1;
             }
@@ -119,21 +131,21 @@ namespace metaSMT {
         }
 
         result_type operator() (bvtags::extract_tag const & 
-            , unsigned long upper, unsigned long lower
+            , unsigned upper, unsigned lower
             , result_type e)
         {
           return _sword.addExtract(e, upper, lower);
         }
 
         result_type operator() (bvtags::zero_extend_tag const & 
-            , unsigned long width
+            , unsigned width
             , result_type e)
         {
           return _sword.addZeroExtend(e, width);
         }
 
         result_type operator() (bvtags::sign_extend_tag const & 
-            , unsigned long width
+            , unsigned width
             , result_type e)
         {
           return _sword.addSignExtend(e, width);
@@ -141,11 +153,8 @@ namespace metaSMT {
 
 
         template <typename TagT>
-        result_type operator() (TagT tag, boost::any args ) {
-          std::cout << tag << std::endl;
-          //printf(",0\n");
-          //Tag t (tag);
-          //std::cout << "SWORD op0: " << t << std::endl;
+        result_type operator() (TagT tag, boost::any ) {
+          // std::cout << tag << std::endl;
           return NULL;
         }
 
@@ -160,7 +169,7 @@ namespace metaSMT {
         }
 
         template <typename TagT>
-        result_type operator() (TagT tag, result_type a, result_type b, result_type c) {
+        result_type operator() (TagT , result_type a, result_type b, result_type c) {
           namespace mpl = boost::mpl;
 
           typedef mpl::map41<
@@ -230,7 +239,11 @@ namespace metaSMT {
         void assumption( result_type e ) { 
           _sword.addAssumption(e);
         }
-        
+
+        unsigned get_bv_width( result_type const &e ) {
+          return 0; // unsupported
+        }
+
         bool solve() {
           return _sword.solve();
         }
@@ -253,7 +266,7 @@ namespace metaSMT {
         }
 
       /* pseudo command */
-      void command ( SWORD_Backend const & ) { };
+      void command ( SWORD_Backend const & ) { }
 
       private:
         SWORD::sword _sword;

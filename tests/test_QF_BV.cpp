@@ -3,7 +3,6 @@
 #include <boost/dynamic_bitset.hpp>
 #include <string>
 
-using namespace std;
 using namespace metaSMT;
 using namespace metaSMT::logic;
 using namespace metaSMT::logic::QF_BV;
@@ -80,6 +79,44 @@ BOOST_AUTO_TEST_CASE( incremental )
   assumption( ctx, equal(bit0, bit1));
   BOOST_REQUIRE( !solve(ctx) );
   BOOST_REQUIRE( solve(ctx) );
+}
+
+// The intent is to catch a bug in Yices2
+BOOST_AUTO_TEST_CASE( incremental_1 )
+{
+  bitvector a = new_bitvector(32);
+  bitvector b = new_bitvector(32);
+  bitvector c = new_bitvector(32);
+  assertion(ctx,equal(bvadd(a,b),c)); // a + b == c
+  assertion(ctx,bvsle(bvsint(10,32),a)); // 10 <= a
+  assertion(ctx,bvsle(a,bvsint(20,32))); // a <= 20
+  assertion(ctx,bvsle(bvadd(bvadd(a,b),c),bvsint(200,32))); // a + b + c <= 200
+  assertion(ctx,equal(bvadd(bvadd(a,b),c),bvsint(100,32))); // a + b + c == 100
+  assumption(ctx,equal(bvsint(0,32), b)); // b == 0
+  assumption(ctx,equal(bvsint(0,32), c)); // c == 0
+  BOOST_REQUIRE(! solve(ctx) );
+  assumption(ctx,equal(bvsint(0,32), c)); // c == 0
+  BOOST_REQUIRE(! solve(ctx) );
+  // with no assuptions, the following call should succeed
+  BOOST_REQUIRE( solve(ctx) );
+}
+
+// The intent is to catch this bug in CVC4: http://cvc4.cs.nyu.edu/bugs/show_bug.cgi?id=731
+BOOST_AUTO_TEST_CASE( incremental_2 )
+{
+  bitvector var1 = new_bitvector(8);
+  bitvector var2 = new_bitvector(8);
+  
+  assertion(ctx,nequal(var1, var2));
+  assertion(ctx,bvult(var1, bvuint(8,8)));
+
+  for (int i = 0; i < 10; i++) {
+    BOOST_REQUIRE( solve(ctx) ); 
+    unsigned v1 = read_value(ctx, var1);
+    unsigned v2 = read_value(ctx, var2);
+    BOOST_REQUIRE(v1 != v2) ;
+    BOOST_REQUIRE_LT(v1, 8); 
+  }    
 }
 
 BOOST_AUTO_TEST_CASE( equal_t )
@@ -287,16 +324,16 @@ BOOST_AUTO_TEST_CASE( read_value_eq_t )
   BOOST_CHECK_EQUAL( xb, yb );
 
   // vector bool
-  vector<bool> xvb = read_value(ctx, x);
-  vector<bool> yvb = read_value(ctx, y);
+  std::vector<bool> xvb = read_value(ctx, x);
+  std::vector<bool> yvb = read_value(ctx, y);
 
   BOOST_CHECK( xvb.size() == 1u );
   BOOST_CHECK( yvb.size() == 1u );
   BOOST_CHECK_EQUAL( xvb.at(0), yvb.at(0) );
 
   // vector tribool
-  vector<tribool> xvt = read_value(ctx, x);
-  vector<tribool> yvt = read_value(ctx, y);
+  std::vector<tribool> xvt = read_value(ctx, x);
+  std::vector<tribool> yvt = read_value(ctx, y);
  
   BOOST_CHECK_EQUAL( xvt.size(), 1u );
   BOOST_CHECK_EQUAL( yvt.size(), 1u );
@@ -310,8 +347,8 @@ BOOST_AUTO_TEST_CASE( read_value_eq_t )
   BOOST_CHECK_EQUAL( xd[0], yvt[0] );
 
   // string
-  string xs = read_value(ctx, x);
-  string ys = read_value(ctx, y);
+  std::string xs = read_value(ctx, x);
+  std::string ys = read_value(ctx, y);
   BOOST_CHECK_EQUAL( xs, ys );
 }
 
@@ -335,16 +372,16 @@ BOOST_AUTO_TEST_CASE( read_value_t )
   BOOST_CHECK_NE( xb, yb );
 
   // vector bool
-  vector<bool> xvb = read_value(ctx, x);
-  vector<bool> yvb = read_value(ctx, y);
+  std::vector<bool> xvb = read_value(ctx, x);
+  std::vector<bool> yvb = read_value(ctx, y);
 
   BOOST_CHECK_EQUAL( xvb.size(), 1u );
   BOOST_CHECK_EQUAL( yvb.size(), 1u );
   BOOST_CHECK_NE( xvb.at(0), yvb.at(0) );
 
   // vector tribool
-  vector<tribool> xvt = read_value(ctx, x);
-  vector<tribool> yvt = read_value(ctx, y);
+  std::vector<tribool> xvt = read_value(ctx, x);
+  std::vector<tribool> yvt = read_value(ctx, y);
  
   BOOST_CHECK_EQUAL( xvt.size(), 1u );
   BOOST_CHECK_EQUAL( yvt.size(), 1u );
@@ -358,8 +395,8 @@ BOOST_AUTO_TEST_CASE( read_value_t )
   BOOST_CHECK_NE( xd[0], yvt[0] );
 
   // string
-  string xs = read_value(ctx, x);
-  string ys = read_value(ctx, y);
+  std::string xs = read_value(ctx, x);
+  std::string ys = read_value(ctx, y);
   BOOST_CHECK_NE( xs, ys );
 }
 
@@ -1882,13 +1919,13 @@ BOOST_AUTO_TEST_CASE( variable_equality )
 BOOST_AUTO_TEST_CASE( constant_64bit )
 {
   unsigned const w = 64;
-  unsigned long const value = std::numeric_limits<unsigned long>::max();
+  uint64_t const value = std::numeric_limits<uint64_t>::max();
   bitvector x = new_bitvector(w);
 
   assumption(ctx, equal(x, bvuint(value, w)));
   BOOST_REQUIRE( solve(ctx) );
 
-  unsigned long xd = read_value(ctx, x);
+  uint64_t xd = read_value(ctx, x);
   std::string xs = read_value(ctx, x);
   BOOST_CHECK_EQUAL(xd, value);
   BOOST_CHECK_EQUAL(xs, "1111111111111111111111111111111111111111111111111111111111111111");
@@ -1914,7 +1951,7 @@ BOOST_AUTO_TEST_CASE( constant_69bit )
 BOOST_AUTO_TEST_CASE( signed_constant_64bit )
 {
   unsigned const w = 64;
-  long value = std::numeric_limits<long>::max();
+  int64_t value = std::numeric_limits<int64_t>::max();
   bitvector x = new_bitvector(w);
 
   assumption(ctx, equal(x, bvsint(value, w)));
@@ -1923,7 +1960,7 @@ BOOST_AUTO_TEST_CASE( signed_constant_64bit )
   std::string xs = read_value(ctx, x);
   BOOST_CHECK_EQUAL(xs, "0111111111111111111111111111111111111111111111111111111111111111");
 
-  long xd = read_value(ctx, x);
+  int64_t xd = read_value(ctx, x);
   BOOST_CHECK_EQUAL(xd, value);
 
   assumption(ctx, equal(x, bvsint(value-123, w)));
@@ -1932,7 +1969,7 @@ BOOST_AUTO_TEST_CASE( signed_constant_64bit )
   xd = read_value(ctx, x);
   BOOST_CHECK_EQUAL(xd, value-123);
 
-  value = std::numeric_limits<long>::min();
+  value = std::numeric_limits<int64_t>::min();
 
   assumption(ctx, equal(x, bvsint(value, w)));
   BOOST_REQUIRE( solve(ctx) );
@@ -2063,6 +2100,24 @@ BOOST_AUTO_TEST_CASE(extended_concat) {
   BOOST_REQUIRE_EQUAL( av3, "00000001" );
   BOOST_REQUIRE_EQUAL( bv3, "00000000" );
   BOOST_REQUIRE_EQUAL( zv3, "0000000100000000" );
+}
+
+BOOST_AUTO_TEST_CASE( get_bv_width )
+{
+   const unsigned w = 8;
+
+   bitvector x = new_bitvector(w);
+   bitvector y = new_bitvector(w);
+
+   ContextType::result_type x_ = evaluate( ctx, x );
+   ContextType::result_type y_ = evaluate( ctx, y );
+   ContextType::result_type cc = evaluate( ctx, concat(x, y) );
+   ContextType::result_type ex = evaluate( ctx, extract(3, 0, concat(x, y)) );
+
+   BOOST_CHECK_EQUAL( ctx.get_bv_width(x_), w );
+   BOOST_CHECK_EQUAL( ctx.get_bv_width(y_), w );
+   BOOST_CHECK_EQUAL( ctx.get_bv_width(cc), w + w );
+   BOOST_CHECK_EQUAL( ctx.get_bv_width(ex), 4 );
 }
 
 BOOST_AUTO_TEST_SUITE_END() //QF_BV

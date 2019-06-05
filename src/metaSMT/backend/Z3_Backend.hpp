@@ -9,13 +9,10 @@
 
 #include <boost/any.hpp>
 #include <boost/mpl/map/map40.hpp>
-#include <boost/spirit/include/qi.hpp>
 #include <boost/tuple/tuple.hpp>
 #include <boost/tuple/tuple_io.hpp>
-#include <boost/fusion/adapted/boost_tuple.hpp>
-#include <boost/fusion/adapted/std_pair.hpp>
-
-#include <gmp.h>
+#include <boost/multiprecision/cpp_int.hpp>
+#include <limits>
 
 namespace metaSMT {
 
@@ -31,8 +28,6 @@ namespace metaSMT {
     namespace bvtags = ::metaSMT::logic::QF_BV::tag;
     namespace arraytags = ::metaSMT::logic::Array::tag;
     namespace uftags = ::metaSMT::logic::QF_UF::tag;
-
-    namespace qi = boost::spirit::qi;
 
     namespace detail {
       struct dummy {
@@ -65,7 +60,7 @@ namespace metaSMT {
           : ctx(ctx)
         {}
 
-        Z3_sort operator() (type::Boolean const &arg) const {
+        Z3_sort operator() (type::Boolean const & ) const {
           return Z3_mk_bool_sort(ctx);
         }
 
@@ -84,6 +79,9 @@ namespace metaSMT {
     } // detail
 
     class Z3_Backend {
+    private:
+      typedef boost::tuple<uint64_t, unsigned>  bvuint_tuple;
+      typedef boost::tuple< int64_t, unsigned>  bvsint_tuple;
     public:
       struct result_type {
         // first type in variant has to be default constructable
@@ -129,7 +127,7 @@ namespace metaSMT {
       // typedef z3::ast result_type;
 
       Z3_Backend()
-        : solver_(ctx_)
+        : solver_(ctx_, "QF_AUFBV")
         , assumption_( (*this)(predtags::true_tag(), boost::any()) )
       {}
 
@@ -138,52 +136,24 @@ namespace metaSMT {
 
       result_wrapper read_value(result_type const &var) {
         z3::model model = solver_.get_model();
-        std::string str;
-        result_type r = model.eval(z3::expr(var), /* completion = */true);
-        str = Z3_ast_to_string(ctx_, z3::expr(r));
+        z3::expr r = model.eval(z3::expr(var), /* completion = */true);
 
         // predicate
-        if ( str == "false" ) {
-          return result_wrapper( false );
-        }
-        else if ( str == "true" ) {
-          return result_wrapper( true );
-        }
-
-        // bit-vector
-        typedef std::string::const_iterator ConstIterator;
-        static qi::rule< ConstIterator, unsigned long() > binary_rule
-          = qi::lit("#b") >> qi::uint_parser<unsigned long, 2, 1, -1>()
-          ;
-
-        static qi::rule< ConstIterator, unsigned long() > hex_rule
-          = qi::lit("#x") >> qi::uint_parser<unsigned long, 16, 1, -1>()
-          ;
-
-        unsigned long value;
-        ConstIterator it = str.begin(), ie = str.end();
-        if ( qi::parse(it, ie, binary_rule, value) ) {
-          // std::cout << str << '\n';
-          // std::cout << std::string(it, ie) << "\n----\n";
-          // std::cout.flush();
-          assert( it == ie && "Expression not completely consumed" );
-          unsigned const width = str.size() - 2;
-          return result_wrapper( value, width );
+        if (r.is_bool()) {
+            Z3_lbool b = Z3_get_bool_value(ctx_, r);
+            if (b == Z3_L_FALSE) return result_wrapper(false);
+            if (b == Z3_L_TRUE) return result_wrapper(true);
+            return result_wrapper();
         }
 
-        it = str.begin(), ie = str.end();
-        if ( qi::parse(it, ie, hex_rule, value) ) {
-          // std::cout << str << '\n';
-          // std::cout << std::string(it, ie) << "\n----\n";
-          // std::cout.flush();
-          assert( it == ie && "Expression not completely consumed" );
-          unsigned const width = (str.size() - 2)*4;
-          return result_wrapper( value, width );
-        }
+        assert(r.is_bv());
+        unsigned long long val = 0;
+        if (Z3_get_numeral_uint64(ctx_, r, &val) && val <= std::numeric_limits<uint64_t>::max())
+          return result_wrapper(val, r.get_sort().bv_size());
 
-        // XXX: determinate size?
-        // return result_wrapper(boost::logic::indeterminate);
-        return result_wrapper(false);
+        std::string str = Z3_ast_to_string(ctx_, r);
+        assert(str.find("#b") == 0);
+        return result_wrapper(str.substr(2));
       }
 
       void assertion( result_type const &e ) {
@@ -192,6 +162,11 @@ namespace metaSMT {
 
       void assumption( result_type const &e ) {
         assumption_ = (*this)(predtags::and_tag(), assumption_, e);
+      }
+
+      unsigned get_bv_width( result_type const &e ) {
+        z3::expr r = z3::expr(e);
+        return r.is_bv() ? r.get_sort().bv_size() : 0;
       }
 
       bool solve() {
@@ -204,13 +179,13 @@ namespace metaSMT {
         return (result == z3::sat);
       }
 
-      result_type operator() (predtags::var_tag const & var, boost::any args) {
+      result_type operator() (predtags::var_tag const & var, boost::any ) {
         char buf[64];
         sprintf(buf, "var_%u", var.id);
         return ctx_.bool_const(buf);
       }
 
-      result_type operator() (bvtags::var_tag const & var, boost::any args) {
+      result_type operator() (bvtags::var_tag const & var, boost::any ) {
         char buf[64];
         sprintf(buf, "var_%u", var.id);
         return ctx_.bv_const(buf, var.width);
@@ -234,7 +209,7 @@ namespace metaSMT {
       }
 
         result_type operator() (uftags::function_var_tag const & var,
-                                boost::any args) {
+                                boost::any ) {
         unsigned const num_args = var.args.size();
 
         // construct the name of the uninterpreted_function
@@ -293,11 +268,11 @@ namespace metaSMT {
           Z3_mk_app(ctx_, z3::func_decl(func_decl), 3, arg_array));
       }
 
-      result_type operator() (predtags::false_tag const &, boost::any arg) {
+      result_type operator() (predtags::false_tag const &, boost::any ) {
         return ctx_.bool_val(false);
       }
 
-      result_type operator() (predtags::true_tag const &, boost::any arg) {
+      result_type operator() (predtags::true_tag const &, boost::any ) {
         return ctx_.bool_val(true);
       }
 
@@ -331,41 +306,40 @@ namespace metaSMT {
           Z3_mk_ite(ctx_, z3::expr(a), z3::expr(b), z3::expr(c)));
       }
 
-      result_type operator() (bvtags::bit0_tag , boost::any arg) {
+      result_type operator() (bvtags::bit0_tag , boost::any ) {
         return ctx_.bv_val(0, 1);
       }
 
-      result_type operator() (bvtags::bit1_tag , boost::any arg) {
+      result_type operator() (bvtags::bit1_tag , boost::any ) {
         return ctx_.bv_val(1, 1);
       }
 
       result_type operator() (bvtags::bvuint_tag const &, boost::any const &arg) {
-        typedef boost::tuple<unsigned long, unsigned long> P;
-        P const p = boost::any_cast<P>(arg);
-        unsigned long const value = boost::get<0>(p);
-        unsigned const width = boost::get<1>(p);
+        uint64_t value;
+        unsigned width;
+        boost::tie(value, width) = boost::any_cast<bvuint_tuple>(arg);
         Z3_sort ty = Z3_mk_bv_sort(ctx_, width);
         return z3::to_expr(ctx_, Z3_mk_unsigned_int64(ctx_, value, ty));
       }
 
       result_type operator() (bvtags::bvsint_tag const &, boost::any const &arg) {
-        typedef boost::tuple<long, unsigned long> P;
-        P const p = boost::any_cast<P>(arg);
-        long const value = boost::get<0>(p);
-        unsigned const width = boost::get<1>(p);
+        int64_t value;
+        unsigned width;
+        boost::tie(value, width) = boost::any_cast<bvsint_tuple>(arg);
         Z3_sort ty = Z3_mk_bv_sort(ctx_, width);
         return z3::to_expr(ctx_, Z3_mk_int64(ctx_, value, ty));
       }
 
       result_type operator() (bvtags::bvbin_tag , boost::any arg) {
         std::string s = boost::any_cast<std::string>(arg);
-        size_t const len = s.size();
-        mpz_t value;
-        mpz_init(value);
-        mpz_set_str(value, s.c_str(), 2);
-        std::string int_string( mpz_get_str(NULL, 10, value) );
-        result_type r = ctx_.bv_val(int_string.c_str(), len);
-        mpz_clear(value);
+        size_t bv_len = s.size();
+
+        using boost::multiprecision::cpp_int;
+        cpp_int value;
+        for (unsigned i = 0; i < bv_len; i++)
+          if (s[i] == '1') bit_set(value, bv_len - i - 1);
+
+        result_type r = ctx_.bv_val(value.str().c_str(), bv_len);
         return r;
       }
 
@@ -441,21 +415,21 @@ namespace metaSMT {
       }
 
       result_type operator() (bvtags::extract_tag const &,
-                              unsigned long upper,
-                              unsigned long lower,
+                              unsigned upper,
+                              unsigned lower,
                               result_type const &e) {
         return z3::to_expr(ctx_,
           Z3_mk_extract(ctx_, upper, lower, z3::expr(e)));
       }
 
       result_type operator() (bvtags::zero_extend_tag const &,
-                              unsigned long width,
+                              unsigned width,
                               result_type e) {
         return z3::to_expr(ctx_, Z3_mk_zero_ext(ctx_, width, z3::expr(e)));
       }
 
       result_type operator() (bvtags::sign_extend_tag const &, 
-                              unsigned long width,
+                              unsigned width,
                               result_type e) {
         return z3::to_expr(ctx_, Z3_mk_sign_ext(ctx_, width, z3::expr(e)));
       }

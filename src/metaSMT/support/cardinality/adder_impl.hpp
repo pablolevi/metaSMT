@@ -2,7 +2,6 @@
 
 #include "object.hpp"
 #include <metaSMT/frontend/QF_BV.hpp>
-#include <metaSMT/support/lazy.hpp>
 #include <boost/mpl/assert.hpp>
 #include <boost/function.hpp>
 #include <queue>
@@ -16,14 +15,15 @@ namespace metaSMT {
       cardinality_any( Context &ctx, std::vector<Boolean> const &ps ) {
         typedef typename Context::result_type result_type;
 
+	/*
         boost::function< result_type ( result_type const &, result_type const & ) >
           lazy_HA_sum = metaSMT::lazy( ctx, logic::Xor(arg1, arg2) );
 
         boost::function< result_type ( result_type const &, result_type const & ) >
-          lazy_HA_carry = metaSMT::lazy( ctx, logic::And(arg1, arg2) );
-
+          lazy_HA_carry = metaSMT::lazy( ctx, logic::And(arg1, arg2) );*/
+	/*	
         boost::function< result_type ( result_type const &, result_type const &, result_type const & ) >
-          lazy_FA_sum = metaSMT::lazy( ctx, logic::Xor(logic::Xor(arg1, arg2), arg3) );
+          lazy_FA_sum = metaSMT::lazy( ctx, logic::Xor(logic::Xor(arg1, arg2), arg3) );*/
 
         // boost::function< result_type ( result_type const &, result_type const &, result_type const & ) >
         //   lazy_FA_carry = metaSMT::lazy( ctx, Xor(And(arg1, arg2), And(Xor(arg1, arg2), arg3)) );
@@ -33,9 +33,9 @@ namespace metaSMT {
 
         // boost::function< result_type ( result_type const &, result_type const &, result_type const & ) >
         //   lazy_FA_carry = metaSMT::lazy( ctx, Ite(arg1, Ite(arg2, bit1, arg3), Ite(arg2, arg3, bit0)) );
-
+	/*
         boost::function< result_type ( result_type const &, result_type const &, result_type const & ) >
-          lazy_FA_carry = metaSMT::lazy( ctx, logic::Ite(arg1, logic::Or(arg2, arg3), logic::And(arg2, arg3)) );
+          lazy_FA_carry = metaSMT::lazy( ctx, logic::Ite(arg1, logic::Or(arg2, arg3), logic::And(arg2, arg3)) );*/
 
         std::queue< result_type > line0, line1;
         std::queue< result_type > *wq0 = &line0;
@@ -52,15 +52,16 @@ namespace metaSMT {
             result_type x = wq0->front(); wq0->pop();
             result_type y = wq0->front(); wq0->pop();
             result_type z = wq0->front(); wq0->pop();
-            wq0->push( evaluate(ctx, lazy_FA_sum(x,y,z)) );
-            wq1->push( evaluate(ctx, lazy_FA_carry(x,y,z)) );
+            wq0->push( evaluate(ctx, logic::Xor(logic::Xor(x, y), z) ));
+ 	    
+            wq1->push( evaluate(ctx, logic::Ite(x, logic::Or(y, z), logic::And(y, z)) ) );
           }
 
           if ( wq0->size() == 2 ) {
             result_type x = wq0->front(); wq0->pop();
             result_type y = wq0->front(); wq0->pop();
-            wq0->push( evaluate(ctx, lazy_HA_sum(x,y)) );
-            wq1->push( evaluate(ctx, lazy_HA_carry(x,y)) );
+            wq0->push( evaluate(ctx, logic::Xor(x,y)) );
+            wq1->push( evaluate(ctx, logic::And(x,y)) );
           }
 
           r.push_back( wq0->front() );
@@ -69,24 +70,24 @@ namespace metaSMT {
           swap(wq0, wq1);
         }
 
-        // bitvector n = new_bitvector( r.size() );
-        // for ( unsigned u = 0; u < r.size(); ++u ) {
-        //   assertion( ctx, logic::equal(extract(u, u, n), Ite(r[u], bit1, bit0)) );
-        // }
-        //
-        // return evaluate( ctx, n );
+        logic::QF_BV::bitvector n = logic::QF_BV::new_bitvector( r.size() );
+        for ( unsigned u = 0; u < r.size(); ++u ) {
+          assertion( ctx, logic::equal(logic::QF_BV::extract(u, u, n), logic::Ite(r[u], logic::QF_BV::bit1, logic::QF_BV::bit0)) );
+        }
+        
+        return evaluate( ctx, n );
 
         // convert result to bitvector
-        result_type n = evaluate(ctx, logic::Ite(r[0], logic::QF_BV::bit1, logic::QF_BV::bit0));
-        for ( unsigned u = 1; u < r.size(); ++u ) {
-          n = evaluate(ctx, concat(logic::Ite(r[u], logic::QF_BV::bit1, logic::QF_BV::bit0), n));
-        }
-        return n;
+        //result_type n = evaluate(ctx, logic::Ite(r[0], logic::QF_BV::bit1, logic::QF_BV::bit0));
+        //for ( unsigned u = 1; u < r.size(); ++u ) {
+        //  n = evaluate(ctx, concat(logic::Ite(r[u], logic::QF_BV::bit1, logic::QF_BV::bit0), n));
+        //}
+        //return n;
       }
 
       template < typename Context, typename Boolean, typename Tag >
       typename Context::result_type
-      cardinality(Context &ctx, cardinality::Cardinality<Tag, Boolean> const &c) {
+      cardinality(Context & , cardinality::Cardinality<Tag, Boolean> const & ) {
         /** error: unknown tag **/
         BOOST_MPL_ASSERT_NOT( (boost::mpl::contains<cardtags::Cardinality_Tags, Tag>) );
       }

@@ -1,37 +1,52 @@
+#ifdef _MSC_VER
+
+#if _MSC_VER < 1900
+#define DISABLE_UNSAT_TESTS
+#endif
+
+#elif __cplusplus <= 199711L
+
+#define DISABLE_UNSAT_TESTS
+
+#endif
+
+
+#ifdef DISABLE_UNSAT_TESTS
+
+#pragma message("Disable test_unsat testcases which require C++11")
+#undef DISABLE_UNSAT_TESTS
+
+#else
+
 #include <boost/test/unit_test.hpp>
 #include <string>
 
-#include <metaSMT/support/why_unsat.hpp>
 #include <metaSMT/support/contradiction_analysis.hpp>
 #include <metaSMT/frontend/Logic.hpp>
 
-#include <boost/assign/list_of.hpp>
 #include <boost/fusion/adapted/boost_tuple.hpp>
 #include <algorithm>
-#define foreach BOOST_FOREACH
 
-using namespace std;
 using namespace metaSMT;
 using namespace metaSMT::solver;
 using namespace metaSMT::logic;
-namespace proto = boost::proto;
-using boost::dynamic_bitset;
-using boost::assign::list_of;
+using std::cout;
+using std::endl;
 
-std::ostream & operator<< (std::ostream & out, vector<unsigned> const & v)
+std::ostream & operator<< (std::ostream & out, std::vector<unsigned> const & v)
 {
  out <<"( ";
- foreach(unsigned u, v)  {
+ for(unsigned u : v)  {
    out << u << ' ';
  }
  out <<')';
  return out;
 }
 
-std::ostream & operator<< (std::ostream & out, vector<vector<unsigned> > const & v)
+std::ostream & operator<< (std::ostream & out, std::vector<std::vector<unsigned> > const & v)
 {
  out <<"( ";
- foreach(vector<unsigned> const & u, v)  {
+ for(std::vector<unsigned> const & u : v)  {
    out << u << ' ';
  }
  out <<')';
@@ -68,29 +83,11 @@ void sort_results( std::vector<std::vector<unsigned> > &results )
 
 BOOST_FIXTURE_TEST_SUITE(unsat, Solver_Fixture )
 
-BOOST_AUTO_TEST_CASE( why_unsat1 )
-{
-  BOOST_REQUIRE( solve(ctx) );
-
-  predicate b = new_variable();
-  predicate c = new_variable();
-  predicate d = new_variable();
-  
-  vector<bool> result =
-    why_unsat(ctx, boost::make_tuple( Xor(d,c), b, equal(b,c), d, Not(c) ) );
-
-  print_why_unsat(ctx, boost::make_tuple( Xor(d,c), b, equal(b,c), d, Not(c) ) );
-  
-  vector<bool> expected = 
-    boost::assign::list_of(false)(true)(true)(false)(true);
-  BOOST_REQUIRE_EQUAL_COLLECTIONS( result.begin(), result.end(), expected.begin(), expected.end());
-}
-
 BOOST_AUTO_TEST_CASE( one_true )
 {
   BOOST_REQUIRE( solve(ctx) );
 
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
     contradiction_analysis(ctx, boost::make_tuple( True ) );
 
   BOOST_REQUIRE_EQUAL(result.size(), 0);
@@ -103,10 +100,10 @@ BOOST_AUTO_TEST_CASE( one_true_vec )
   
   result_type x = evaluate(ctx,True);
 
-  vector<result_type> vec;
+  std::vector<result_type> vec;
   vec.push_back(x);
   
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
     contradiction_analysis(ctx, vec );
 
   BOOST_REQUIRE_EQUAL(result.size(), 0);
@@ -116,7 +113,7 @@ BOOST_AUTO_TEST_CASE( one_false )
 {
   BOOST_REQUIRE( solve(ctx) );
 
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
      contradiction_analysis(ctx, boost::make_tuple( False ));
 
   BOOST_REQUIRE_EQUAL(result.size(), 1);
@@ -130,10 +127,10 @@ BOOST_AUTO_TEST_CASE( one_false_vec )
   
   result_type x = evaluate(ctx,False);
 
-  vector<result_type> vec;
+  std::vector<result_type> vec;
   vec.push_back(x);
   
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
     contradiction_analysis(ctx, vec );
 
   BOOST_REQUIRE_EQUAL(result.size(), 1);
@@ -145,7 +142,7 @@ BOOST_AUTO_TEST_CASE( two_false )
 {
   BOOST_REQUIRE( solve(ctx) );
 
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
       contradiction_analysis(ctx, boost::make_tuple( False, False ));
 
   BOOST_REQUIRE_EQUAL(result.size(), 2);
@@ -164,11 +161,11 @@ BOOST_AUTO_TEST_CASE( two_false_vec )
   result_type x = evaluate(ctx,False);
   result_type y = evaluate(ctx,False);
   
-  vector<result_type> vec;
+  std::vector<result_type> vec;
   vec.push_back(x);
   vec.push_back(y);
 
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
     contradiction_analysis(ctx, vec );
 
   BOOST_REQUIRE_EQUAL(result.size(), 2);
@@ -183,7 +180,7 @@ BOOST_AUTO_TEST_CASE( three_false )
 {
   BOOST_REQUIRE( solve(ctx) );
 
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
     contradiction_analysis(ctx, boost::make_tuple(False, False, False) );
 
   BOOST_REQUIRE_EQUAL(result.size(), 3);
@@ -205,12 +202,12 @@ BOOST_AUTO_TEST_CASE( three_false_vec )
   result_type x = evaluate(ctx,False);
   result_type y = evaluate(ctx,False);
   result_type z = evaluate(ctx,False);
-  vector<result_type> vec;
+  std::vector<result_type> vec;
   vec.push_back(x);
   vec.push_back(y);
   vec.push_back(z);
 
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
     contradiction_analysis(ctx, vec );
 
   BOOST_REQUIRE_EQUAL(result.size(), 3);
@@ -229,7 +226,7 @@ BOOST_AUTO_TEST_CASE( two_conflicts_1 )
   predicate b = new_variable();
   predicate d = new_variable();
   
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
     contradiction_analysis(ctx, boost::make_tuple(True, False, nequal(d,b), equal(d, b) ));
   sort_results(result);
 
@@ -241,7 +238,7 @@ BOOST_AUTO_TEST_CASE( two_conflicts_1 )
   BOOST_REQUIRE_EQUAL(result[1].size(), 2);
   BOOST_REQUIRE_EQUAL(result[0][0], 1);
 
-  vector<unsigned> expected = list_of (2)(3);
+  std::vector<unsigned> expected = { 2, 3 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[1].begin(), result[1].end(), expected.begin(), expected.end());
 }
 
@@ -258,13 +255,13 @@ BOOST_AUTO_TEST_CASE( two_conflicts_1_vec )
   result_type z1 = evaluate(ctx,nequal(b,c));
   result_type z2 = evaluate(ctx,equal(b,c));
 
-  vector<result_type> vec;
+  std::vector<result_type> vec;
   vec.push_back(x);
   vec.push_back(y);
   vec.push_back(z1);
   vec.push_back(z2);
 
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
     contradiction_analysis(ctx, vec );
   
   sort_results(result);
@@ -274,7 +271,7 @@ BOOST_AUTO_TEST_CASE( two_conflicts_1_vec )
   BOOST_REQUIRE_EQUAL(result[1].size(), 2);
   BOOST_REQUIRE_EQUAL(result[0][0], 1);
 
-  vector<unsigned> expected = list_of (2)(3);
+  std::vector<unsigned> expected = { 2, 3 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[1].begin(), result[1].end(), expected.begin(), expected.end());
 }
 
@@ -286,19 +283,19 @@ BOOST_AUTO_TEST_CASE( two_conflicts_2 )
   predicate c = new_variable();
   predicate d = new_variable();
   
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
     contradiction_analysis(ctx, boost::make_tuple(equal(c,b), nequal(d,b), nequal(c,b), equal(d, b) ));
   sort_results(result);
 
   BOOST_REQUIRE_EQUAL(result.size(), 2);
   BOOST_REQUIRE_EQUAL(result[0].size(), 2);
   BOOST_REQUIRE_EQUAL(result[1].size(), 2);
-  vector<unsigned> expected;
+  std::vector<unsigned> expected;
 
-  expected= list_of (0)(2);
+  expected = { 0, 2 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[0].begin(), result[0].end(), expected.begin(), expected.end());
 
-  expected= list_of (1)(3);
+  expected = { 1, 3 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[1].begin(), result[1].end(), expected.begin(), expected.end());
 }
 
@@ -316,13 +313,13 @@ BOOST_AUTO_TEST_CASE( two_conflicts_2_vec )
   result_type z1 = evaluate(ctx,nequal(a,b));
   result_type z2 = evaluate(ctx,equal(b,c));
 
-  vector<result_type> vec;
+  std::vector<result_type> vec;
   vec.push_back(x1);
   vec.push_back(x2);
   vec.push_back(z1);
   vec.push_back(z2);
 
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
     contradiction_analysis(ctx, vec );
   
   sort_results(result);
@@ -330,12 +327,12 @@ BOOST_AUTO_TEST_CASE( two_conflicts_2_vec )
   BOOST_REQUIRE_EQUAL(result.size(), 2);
   BOOST_REQUIRE_EQUAL(result[0].size(), 2);
   BOOST_REQUIRE_EQUAL(result[1].size(), 2);
-  vector<unsigned> expected;
+  std::vector<unsigned> expected;
 
-  expected= list_of (0)(2);
+  expected= { 0, 2 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[0].begin(), result[0].end(), expected.begin(), expected.end());
 
-  expected= list_of (1)(3);
+  expected= { 1, 3 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[1].begin(), result[1].end(), expected.begin(), expected.end());
 }
 
@@ -346,7 +343,7 @@ BOOST_AUTO_TEST_CASE( two_conflicts_3 )
   predicate b = new_variable();
   predicate d = new_variable();
   
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
     contradiction_analysis(ctx, boost::make_tuple(True, nequal(d,b), False, equal(d, b) ));
   sort_results(result);
 
@@ -355,7 +352,7 @@ BOOST_AUTO_TEST_CASE( two_conflicts_3 )
   BOOST_REQUIRE_EQUAL(result[1].size(), 2);
   BOOST_REQUIRE_EQUAL(result[0][0], 2);
 
-  vector<unsigned> expected = list_of (1)(3);
+  std::vector<unsigned> expected = { 1, 3 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[1].begin(), result[1].end(), expected.begin(), expected.end());
 }
 
@@ -372,13 +369,13 @@ BOOST_AUTO_TEST_CASE( two_conflicts_3_vec )
   result_type z1 = evaluate(ctx,False);
   result_type z2 = evaluate(ctx,equal(a,b));
 
-  vector<result_type> vec;
+  std::vector<result_type> vec;
   vec.push_back(x1);
   vec.push_back(x2);
   vec.push_back(z1);
   vec.push_back(z2);
 
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
     contradiction_analysis(ctx, vec );
   
   sort_results(result);
@@ -388,7 +385,7 @@ BOOST_AUTO_TEST_CASE( two_conflicts_3_vec )
   BOOST_REQUIRE_EQUAL(result[1].size(), 2);
   BOOST_REQUIRE_EQUAL(result[0][0], 2);
 
-  vector<unsigned> expected = list_of (1)(3);
+  std::vector<unsigned> expected = { 1, 3 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[1].begin(), result[1].end(), expected.begin(), expected.end());
 }
 
@@ -399,7 +396,7 @@ BOOST_AUTO_TEST_CASE( double_conflict_1 )
   predicate b = new_variable();
   predicate d = new_variable();
   
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
     contradiction_analysis(ctx, boost::make_tuple(True, nequal(d,b), equal(d, b), nequal(d,b) ));
   sort_results(result);
 
@@ -407,12 +404,12 @@ BOOST_AUTO_TEST_CASE( double_conflict_1 )
   BOOST_REQUIRE_EQUAL(result[0].size(), 2);
   BOOST_REQUIRE_EQUAL(result[1].size(), 2);
 
-vector<unsigned> expected;
+std::vector<unsigned> expected;
 
-  expected = list_of (1)(2);
+  expected = { 1, 2 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[0].begin(), result[0].end(), expected.begin(), expected.end());
 
-  expected = list_of (2)(3);
+  expected = { 2, 3 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[1].begin(), result[1].end(), expected.begin(), expected.end());
 }
 
@@ -429,13 +426,13 @@ BOOST_AUTO_TEST_CASE( double_conflict_1_vec )
   result_type z1 = evaluate(ctx,equal(a,b));
   result_type z2 = evaluate(ctx,nequal(a,b));
 
-  vector<result_type> vec;
+  std::vector<result_type> vec;
   vec.push_back(x1);
   vec.push_back(x2);
   vec.push_back(z1);
   vec.push_back(z2);
 
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
     contradiction_analysis(ctx, vec );
   
   sort_results(result);
@@ -444,12 +441,12 @@ BOOST_AUTO_TEST_CASE( double_conflict_1_vec )
   BOOST_REQUIRE_EQUAL(result[0].size(), 2);
   BOOST_REQUIRE_EQUAL(result[1].size(), 2);
 
-vector<unsigned> expected;
+std::vector<unsigned> expected;
 
-  expected = list_of (1)(2);
+  expected = { 1, 2 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[0].begin(), result[0].end(), expected.begin(), expected.end());
 
-  expected = list_of (2)(3);
+  expected = { 2, 3 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[1].begin(), result[1].end(), expected.begin(), expected.end());
 }
 
@@ -462,7 +459,7 @@ BOOST_AUTO_TEST_CASE( double_conflicts_1)
   predicate c = new_variable();
   predicate d = new_variable(); 
 
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
     contradiction_analysis(ctx, boost::make_tuple( 
       True,
       equal(d,b),
@@ -482,18 +479,18 @@ BOOST_AUTO_TEST_CASE( double_conflicts_1)
   BOOST_REQUIRE_EQUAL(result[2].size(), 2);
   BOOST_REQUIRE_EQUAL(result[3].size(), 2);
 
-  vector<unsigned> expected;
+  std::vector<unsigned> expected;
 
-  expected = list_of (2);
+  expected = { 2 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[0].begin(), result[0].end(), expected.begin(), expected.end());
 
-  expected = list_of (4);
+  expected = { 4 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[1].begin(), result[1].end(), expected.begin(), expected.end());
 
-  expected = list_of (1)(3);
+  expected = { 1, 3 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[2].begin(), result[2].end(), expected.begin(), expected.end());
 
-  expected = list_of (5)(6);
+  expected = { 5, 6 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[3].begin(), result[3].end(), expected.begin(), expected.end());
 }
 
@@ -507,7 +504,7 @@ BOOST_AUTO_TEST_CASE( double_conflicts_1_vec)
   predicate c = new_variable();
   predicate d = new_variable();
 
-  vector<result_type> vec;
+  std::vector<result_type> vec;
 
   vec.push_back( evaluate(ctx,True) );
   vec.push_back( evaluate(ctx,equal(a,b)) );
@@ -518,7 +515,7 @@ BOOST_AUTO_TEST_CASE( double_conflicts_1_vec)
   vec.push_back( evaluate(ctx,nequal(c,d)) );
   vec.push_back( evaluate(ctx,True) );
 
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
     contradiction_analysis(ctx, vec );
   
   sort_results(result);
@@ -529,18 +526,18 @@ BOOST_AUTO_TEST_CASE( double_conflicts_1_vec)
   BOOST_REQUIRE_EQUAL(result[2].size(), 2);
   BOOST_REQUIRE_EQUAL(result[3].size(), 2);
 
-  vector<unsigned> expected;
+  std::vector<unsigned> expected;
 
-  expected = list_of (2);
+  expected = { 2 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[0].begin(), result[0].end(), expected.begin(), expected.end());
  
-    expected = list_of (4);
+  expected = { 4 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[1].begin(), result[1].end(), expected.begin(), expected.end());
 
-  expected = list_of (1)(3);
+  expected = { 1, 3 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[2].begin(), result[2].end(), expected.begin(), expected.end());
  
-    expected = list_of (5)(6);
+  expected = { 5, 6 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[3].begin(), result[3].end(), expected.begin(), expected.end());
 }
 
@@ -552,14 +549,14 @@ BOOST_AUTO_TEST_CASE( unsolve_conflict)
   predicate b = new_variable();
   predicate c = new_variable();
   
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
     contradiction_analysis(ctx, boost::make_tuple( nequal(a,b), nequal(b,c), nequal(a,c)) );
 
 
   BOOST_REQUIRE_EQUAL(result.size(), 1);
-  vector<unsigned> expected;
+  std::vector<unsigned> expected;
 
-  expected = list_of (0)(1)(2);
+  expected = { 0, 1, 2 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[0].begin(), result[0].end(), expected.begin(), expected.end());
 }
 
@@ -576,23 +573,24 @@ BOOST_AUTO_TEST_CASE( unsolve_conflict_vec)
   result_type x2 = evaluate(ctx,nequal(b,c));
   result_type x3 = evaluate(ctx,nequal(a,c));
 
-  vector<result_type> vec;
+  std::vector<result_type> vec;
   vec.push_back(x1);
   vec.push_back(x2);
   vec.push_back(x3);
 
-  vector< vector<unsigned> > result =
+  std::vector< std::vector<unsigned> > result =
     contradiction_analysis(ctx, vec );
   
   sort_results(result);
 
   BOOST_REQUIRE_EQUAL(result.size(), 1);
-  vector<unsigned> expected;
+  std::vector<unsigned> expected;
 
-  expected = list_of (0)(1)(2);
+  expected = { 0, 1, 2 };
   BOOST_REQUIRE_EQUAL_COLLECTIONS( result[0].begin(), result[0].end(), expected.begin(), expected.end());
 }
 
 BOOST_AUTO_TEST_SUITE_END() //Solver
 
+#endif
 //  vim: ft=cpp:ts=2:sw=2:expandtab

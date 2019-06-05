@@ -1,9 +1,40 @@
 #pragma once
 
+#include "../tags/Array.hpp"
 #include "../tags/QF_BV.hpp"
 #include "../result_wrapper.hpp"
 
+#ifdef __clang__
+#define _BACKWARD_BACKWARD_WARNING_H
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wvariadic-macros"
+#pragma clang diagnostic ignored "-Wunused-parameter"
+#endif
+
+#ifdef __GNUC__
+# if __GNUC__ >= 4 and __GNUC_MINOR__ > 4
+// with this definitions gcc 4.4 creates executables with random segfaults
+#define _BACKWARD_BACKWARD_WARNING_H
+#pragma GCC push_options
+#pragma GCC diagnostic ignored "-Wvariadic-macros"
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#endif
+#endif
+
 #include <cvc4/cvc4.h>
+
+#ifdef __GNUC__
+# if __GNUC__ >= 4 and __GNUC_MINOR__ > 4
+// this makes gcc 4.4 corrupt executables and cause random segfaults
+#pragma GCC pop_options
+#undef _BACKWARD_BACKWARD_WARNING_H
+#endif
+#endif
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#undef _BACKWARD_BACKWARD_WARNING_H
+#endif
 
 #include <boost/mpl/map/map40.hpp>
 #include <boost/any.hpp>
@@ -14,6 +45,7 @@ namespace metaSMT {
   namespace solver {
     namespace predtags = ::metaSMT::logic::tag;
     namespace bvtags = ::metaSMT::logic::QF_BV::tag;
+    namespace arraytags = ::metaSMT::logic::Array::tag;
 
     /**
      * @ingroup Backend
@@ -21,6 +53,10 @@ namespace metaSMT {
      * @brief The CVC4 backend
      */
     class CVC4 {
+    private:
+      typedef boost::tuple<uint64_t, unsigned>  bvuint_tuple;
+      typedef boost::tuple< int64_t, unsigned>  bvsint_tuple;
+
     public:
       typedef ::CVC4::Expr result_type;
       typedef std::list< ::CVC4::Expr > Exprs;
@@ -32,10 +68,35 @@ namespace metaSMT {
       {
         engine_.setOption("incremental", true);
         engine_.setOption("produce-models", true);
+        engine_.setLogic("QF_ABV");
       }
 
       ~CVC4() {
       }
+
+	result_type operator() (arraytags::array_var_tag const &var,
+                              boost::any const & ) {
+		if (var.id == 0 ) {
+		  throw std::runtime_error("uninitialized array used");
+		}
+		::CVC4::Type elementType = exprManager_.mkBitVectorType(var.elem_width);
+		::CVC4::Type indexType = exprManager_.mkBitVectorType(var.index_width);
+		::CVC4::Type arrayType = exprManager_.mkArrayType(indexType, elementType);
+		return exprManager_.mkVar(arrayType);
+	}
+
+	result_type operator() (arraytags::select_tag const &
+                              , result_type const &array
+                              , result_type const &index) {
+	return exprManager_.mkExpr(::CVC4::kind::SELECT, array, index);
+}
+
+	result_type operator() (arraytags::store_tag const &
+                              , result_type const &array
+                              , result_type const &index
+                              , result_type const &value) {
+	return exprManager_.mkExpr(::CVC4::kind::STORE, array, index, value);
+	}
 
       void assertion( result_type e ) {
         assertions_.push_back( e );
@@ -43,6 +104,11 @@ namespace metaSMT {
 
       void assumption( result_type e ) {
         assumptions_.push_back( e );
+      }
+
+      unsigned get_bv_width( result_type const &e ) {
+        ::CVC4::Type type = e.getType();
+        return type.isBitVector() ? ((::CVC4::BitVectorType) type).getSize() : 0;
       }
 
       bool solve() {
@@ -69,15 +135,15 @@ namespace metaSMT {
       }
 
       // predtags
-      result_type operator()( predtags::var_tag const & var, boost::any args ) {
+      result_type operator()( predtags::var_tag const & , boost::any ) {
         return exprManager_.mkVar(exprManager_.booleanType());
       }
 
-      result_type operator()( predtags::false_tag , boost::any arg ) {
+      result_type operator()( predtags::false_tag , boost::any ) {
         return exprManager_.mkConst(false);
       }
 
-      result_type operator()( predtags::true_tag , boost::any arg ) {
+      result_type operator()( predtags::true_tag , boost::any ) {
         return exprManager_.mkConst(true);
       }
 
@@ -85,41 +151,36 @@ namespace metaSMT {
         return exprManager_.mkExpr(::CVC4::kind::NOT, e);
       }
 
-      result_type operator()( predtags::ite_tag tag
-                              , result_type a, result_type b, result_type c ) {
+      result_type operator()( predtags::ite_tag , result_type a, result_type b, result_type c ) {
         return exprManager_.mkExpr(::CVC4::kind::ITE, a, b, c);
       }
 
       // bvtags
-      result_type operator()( bvtags::var_tag const & var, boost::any args ) {
+      result_type operator()( bvtags::var_tag const & var, boost::any ) {
         assert ( var.width != 0 );
         ::CVC4::Type bv_ty = exprManager_.mkBitVectorType(var.width);
         return exprManager_.mkVar(bv_ty);
       }
 
-      result_type operator()( bvtags::bit0_tag , boost::any arg ) {
+      result_type operator()( bvtags::bit0_tag , boost::any ) {
         return exprManager_.mkConst(::CVC4::BitVector(1u, 0u));
       }
 
-      result_type operator()( bvtags::bit1_tag , boost::any arg ) {
+      result_type operator()( bvtags::bit1_tag , boost::any ) {
         return exprManager_.mkConst(::CVC4::BitVector(1u, 1u));
       }
 
       result_type operator()( bvtags::bvuint_tag , boost::any arg ) {
-        typedef boost::tuple<unsigned long, unsigned long> Tuple;
-        Tuple tuple = boost::any_cast<Tuple>(arg);
-        unsigned long value = boost::get<0>(tuple);
-        unsigned long width = boost::get<1>(tuple);
-
+        uint64_t value;
+        unsigned width;
+        boost::tie(value, width) = boost::any_cast<bvuint_tuple>(arg);
         return exprManager_.mkConst(::CVC4::BitVector(width, value));
       }
 
       result_type operator()( bvtags::bvsint_tag , boost::any arg ) {
-        typedef boost::tuple<long, unsigned long> Tuple;
-        Tuple tuple = boost::any_cast<Tuple>(arg);
-        long value = boost::get<0>(tuple);
-        unsigned long width = boost::get<1>(tuple);
-
+        int64_t value;
+        unsigned width;
+        boost::tie(value, width) = boost::any_cast<bvsint_tuple>(arg);
         ::CVC4::BitVector bvValue (width, ::CVC4::Integer(value));
         return exprManager_.mkConst(bvValue);
       }
@@ -143,7 +204,7 @@ namespace metaSMT {
       }
 
       result_type operator()( bvtags::extract_tag const &
-        , unsigned long upper, unsigned long lower
+        , unsigned upper, unsigned lower
         , result_type e)
       {
         ::CVC4::BitVectorExtract bvOp (upper, lower);
@@ -152,7 +213,7 @@ namespace metaSMT {
       }
 
       result_type operator()( bvtags::zero_extend_tag const &
-        , unsigned long width
+        , unsigned width
         , result_type e)
       {
         ::CVC4::BitVectorZeroExtend bvOp (width);
@@ -161,7 +222,7 @@ namespace metaSMT {
       }
 
       result_type operator()( bvtags::sign_extend_tag const &
-        , unsigned long width
+        , unsigned width
         , result_type e)
       {
         ::CVC4::BitVectorSignExtend bvOp (width);
@@ -172,11 +233,15 @@ namespace metaSMT {
       result_type operator()( predtags::equal_tag const &
                              , result_type a
                              , result_type b) {
+#ifndef CVC4_WITHOUT_KIND_IFF
         if (a.getType().isBoolean() && b.getType().isBoolean() ) {
           return exprManager_.mkExpr(::CVC4::kind::IFF, a, b);
         } else {
           return exprManager_.mkExpr(::CVC4::kind::EQUAL, a, b);
         }
+#else
+        return exprManager_.mkExpr(::CVC4::kind::EQUAL, a, b);
+#endif
       }
 
       result_type operator()( predtags::nequal_tag const &
@@ -196,7 +261,7 @@ namespace metaSMT {
       ////////////////////////
 
       template <typename TagT>
-      result_type operator() (TagT tag, boost::any args ) {
+      result_type operator() (TagT , boost::any ) {
         assert( false );
         return exprManager_.mkConst(false);
       }
@@ -220,7 +285,7 @@ namespace metaSMT {
       };
 
       template <typename TagT>
-      result_type operator() (TagT tag, result_type a, result_type b) {
+      result_type operator() (TagT , result_type a, result_type b) {
         namespace mpl = boost::mpl;
         using namespace ::CVC4::kind;
 
@@ -282,13 +347,13 @@ namespace metaSMT {
       }
 
       template <typename TagT>
-      result_type operator() (TagT tag, result_type a, result_type b, result_type c) {
+      result_type operator() (TagT , result_type , result_type , result_type ) {
         assert( false );
         return exprManager_.mkConst(false);
       }
 
       // pseudo command
-      void command ( CVC4 const & ) { };
+      void command ( CVC4 const & ) { }
 
     private:
       void removeOldAssumptions() {
