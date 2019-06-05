@@ -44,7 +44,11 @@ namespace metaSMT {
       result_type operator() ( std::vector<bool> const & vb) const {
         result_type ret (vb.size());
         for (unsigned i = 0; i < vb.size(); ++i) {
+#ifdef __APPLE__
+          ret[i] = vb[i]? true : false;
+#else
           ret[i] = vb[i];
+#endif
         }
         return ret;
       }
@@ -119,7 +123,11 @@ namespace metaSMT {
 
       result_type operator() ( boost::logic::tribool t) {
         result_type ret(1);
+#ifdef __APPLE__
+        ret[0] = t? true : false;
+#else
         ret[0] = t;
+#endif
         return ret;
       }
 
@@ -132,7 +140,11 @@ namespace metaSMT {
       result_type operator() ( std::vector< boost::logic::tribool > vt ) const {
         result_type ret(vt.size());
         for (unsigned i = 0; i < vt.size(); ++i)
+#ifdef __APPLE__
+         ret[i] = vt[i]? true : false;
+#else
          ret[i] = vt[i];
+#endif
         return ret;
       }
 
